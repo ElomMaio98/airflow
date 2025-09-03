@@ -1,0 +1,11 @@
+# Pastas do Ambiente Virtual Python
+/Lib/
+/Scripts/
+/Include/
+/pyvenv.cfg
+
+# Arquivo de segredos e senhas
+.env
+
+# Cache do Python
+__pycache__/
