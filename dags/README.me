@@ -1,0 +1,179 @@
+MongoDB to PostgreSQL Sync Pipeline
+Pipeline automatizado de sincronização de alertas de segurança do MongoDB para PostgreSQL usando Apache Airflow.
+📋 Visão Geral
+Este projeto implementa um pipeline ETL que:
+
+Extrai novos alertas de vulnerabilidades de segurança do MongoDB
+Transforma os dados para o formato PostgreSQL
+Carrega incrementalmente apenas registros novos
+Executa automaticamente a cada 10 minutos
+
+🏗️ Arquitetura
+MongoDB (Alerts Collection)
+    ↓
+Apache Airflow DAG
+    ↓
+PostgreSQL (security_findings table)
+Fluxo do Pipeline
+
+get_last_alert_id: Busca o último mongo_id registrado no PostgreSQL
+extract_new_alerts: Extrai alertas do MongoDB com _id maior que o último registrado
+load_alerts_to_postgres: Insere novos alertas no PostgreSQL
+
+🔧 Pré-requisitos
+
+Python 3.8+
+Apache Airflow 2.x
+MongoDB (local ou Atlas)
+PostgreSQL
+Bibliotecas Python:
+
+  apache-airflow
+  apache-airflow-providers-postgres
+  pymongo
+  psycopg2-binary
+  python-dotenv
+  pendulum
+⚙️ Configuração
+1. Variáveis de Ambiente
+Crie um arquivo .env na raiz do projeto:
+env# Ambiente
+ENVIRONMENT=PRD  # ou DEV para MongoDB Atlas
+
+# MongoDB - Produção (local)
+MONGO_USER_NAME=seu_usuario
+MONGO_PASSWORD=sua_senha
+MONGO_URL=localhost
+MONGO_PORT=27017
+MONGO_DB_NAME=nome_do_banco
+
+# MongoDB - Desenvolvimento (Atlas)
+# MONGO_USER_NAME=seu_usuario
+# MONGO_PASSWORD=sua_senha
+# MONGO_CLUSTER_NAME=cluster0
+# MONGO_PREFIX=xxxxx
+# MONGO_DB_NAME=nome_do_banco
+2. Conexão Airflow
+Configure a conexão PostgreSQL no Airflow:
+Connection ID: postgres_default
+Host: localhost
+Schema: seu_banco
+Login: seu_usuario
+Password: sua_senha
+Port: 5432
+3. Tabela PostgreSQL
+Execute o seguinte SQL para criar a tabela de destino:
+sqlCREATE TABLE security_findings (
+    id SERIAL PRIMARY KEY,
+    mongo_id VARCHAR(24) UNIQUE NOT NULL,
+    project_name VARCHAR(255),
+    tool_type VARCHAR(100),
+    tool_name VARCHAR(100),
+    title TEXT,
+    severity VARCHAR(50),
+    description TEXT,
+    local_path TEXT,
+    status VARCHAR(50),
+    creation_date TIMESTAMP,
+    resolved_date TIMESTAMP,
+    cve VARCHAR(50),
+    how_to_fix TEXT,
+    tags TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_mongo_id ON security_findings(mongo_id);
+CREATE INDEX idx_severity ON security_findings(severity);
+CREATE INDEX idx_status ON security_findings(status);
+🚀 Instalação
+1. Clone o repositório
+bashgit clone <seu-repositorio>
+cd mongo-to-postgres-sync
+2. Instale as dependências
+bashpip install -r requirements.txt
+3. Configure o arquivo .env
+bashcp .env.example .env
+# Edite o .env com suas credenciais
+4. Coloque a DAG no Airflow
+bashcp mongo_to_postgres_sync.py $AIRFLOW_HOME/dags/
+5. Ative a DAG no Airflow UI
+bashairflow dags unpause mongo_to_postgres_sync
+📊 Estrutura de Dados
+Documento MongoDB (Entrada)
+json{
+  "_id": ObjectId("507f1f77bcf86cd799439011"),
+  "projectName": "api-payment",
+  "toolType": "SAST",
+  "toolName": "Zanshin",
+  "title": "SQL Injection Vulnerability",
+  "severity": "HIGH",
+  "description": "User input não sanitizado...",
+  "path": "/src/controllers/payment.py",
+  "status": "OPEN",
+  "creationDate": ISODate("2025-01-15T10:30:00Z"),
+  "resolvedDate": null,
+  "cve": "CVE-2024-1234",
+  "howToFix": "Utilize prepared statements...",
+  "tags": ["injection", "database"]
+}
+Tabela PostgreSQL (Saída)
+CampoTipoDescriçãoidSERIALChave primária auto-incrementomongo_idVARCHAR(24)ID original do MongoDB (único)project_nameVARCHAR(255)Nome do projetotool_typeVARCHAR(100)Tipo da ferramenta (SAST, DAST, etc)tool_nameVARCHAR(100)Nome da ferramentatitleTEXTTítulo da vulnerabilidadeseverityVARCHAR(50)Severidade (CRITICAL, HIGH, MEDIUM, LOW)descriptionTEXTDescrição detalhadalocal_pathTEXTCaminho do arquivo vulnerávelstatusVARCHAR(50)Status (OPEN, RESOLVED, FALSE_POSITIVE)creation_dateTIMESTAMPData de criação do alertaresolved_dateTIMESTAMPData de resoluçãocveVARCHAR(50)Código CVE (se aplicável)how_to_fixTEXTOrientações de correçãotagsTEXTTags relacionadas (array convertido em string)created_atTIMESTAMPData de inserção no PostgreSQL
+🔍 Monitoramento
+Logs do Airflow
+bash# Ver logs da DAG
+airflow dags show mongo_to_postgres_sync
+
+# Ver logs de uma tarefa específica
+airflow tasks logs mongo_to_postgres_sync extract_new_alerts <execution_date>
+Verificar Sincronização
+sql-- Contar alertas sincronizados
+SELECT COUNT(*) FROM security_findings;
+
+-- Último alerta sincronizado
+SELECT mongo_id, creation_date, title 
+FROM security_findings 
+ORDER BY mongo_id DESC 
+LIMIT 1;
+
+-- Alertas por severidade
+SELECT severity, COUNT(*) 
+FROM security_findings 
+GROUP BY severity;
+⏱️ Schedule
+
+Frequência: A cada 10 minutos (*/10 * * * *)
+Catchup: Desabilitado (não executa DAGs retroativas)
+Start Date: 01/01/2023
+
+Para modificar a frequência, edite o parâmetro schedule_interval na DAG.
+🐛 Troubleshooting
+Erro: "Credenciais não definidas"
+Verifique se todas as variáveis de ambiente necessárias estão no arquivo .env:
+bashcat .env | grep MONGO
+Erro de Conexão MongoDB
+Teste a conexão manualmente:
+pythonfrom pymongo import MongoClient
+client = MongoClient("sua_connection_string")
+print(client.server_info())
+Erro de Conexão PostgreSQL
+Verifique a conexão no Airflow UI:
+Admin > Connections > postgres_default
+Nenhum alerta novo carregado
+Isso é normal se não houver novos alertas desde a última execução. Verifique:
+sqlSELECT MAX(mongo_id) FROM security_findings;
+📈 Melhorias Futuras
+
+ Adicionar tratamento de updates (alertas que mudam de status)
+ Implementar retry policy para falhas temporárias
+ Adicionar notificações (Slack/Email) em caso de erros
+ Criar dashboard Metabase/Grafana para visualização
+ Implementar data quality checks
+ Adicionar testes unitários
+
+📝 Licença
+Este projeto é de uso interno.
+👤 Autor
+Elom Maio
+Data Analyst | Data Engineer
+📧 maioelom@gmail.com
+🔗 LinkedIn
